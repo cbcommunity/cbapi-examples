@@ -64,6 +64,8 @@ def printWatchlistHits(serverurl, watchlistid, watchlisttype, rows):
     global cb
     pp = pprint.PrettyPrinter(indent=2)
 
+    print rows
+
     getparams = {"cb.urlver": 1,
                 "watchlist_%d" % watchlistid : "*",
                 "rows": rows }
