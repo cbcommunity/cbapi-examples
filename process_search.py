@@ -31,7 +31,10 @@
 #
 
 import pprint
-from cbapi.util.cli_helpers import main_helper
+try:
+    from cbapi.legacy.util.cli_helpers import main_helper
+except ImportError:
+    from cbapi.util.cli_helpers import main_helper
 
 def main(cb, args):
 

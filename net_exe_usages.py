@@ -30,7 +30,10 @@
 #  last updated 2015-06-28 by Ben Johnson bjohnson@bit9.com
 #
 
-from cbapi.util.cli_helpers import main_helper
+try:
+    from cbapi.legacy.util.cli_helpers import main_helper
+except ImportError:
+    from cbapi.util.cli_helpers import main_helper
 
 def main(cb, args):
     start = args.get('start')

@@ -1,5 +1,9 @@
-from cbapi.util.cli_helpers import main_helper
-from cbapi.util.live_response_helpers import LiveResponseHelper
+try:
+    from cbapi.legacy.util.cli_helpers import main_helper
+    from cbapi.legacy.util.live_response_helpers import LiveResponseHelper
+except ImportError:
+    from cbapi.util.cli_helpers import main_helper
+    from cbapi.util.live_response_helpers import LiveResponseHelper
 
 def main(cb, args):
     filepath = args.get('filepath')

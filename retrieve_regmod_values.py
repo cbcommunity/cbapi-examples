@@ -46,9 +46,15 @@ import sys
 from threading import Thread
 import time
 import traceback
-from cbapi.util.cli_helpers import main_helper
-from cbapi.util.composite_helpers import MessageSubscriberAndLiveResponseActor
-import cbapi.util.sensor_events_pb2 as cpb
+
+try:
+    from cbapi.legacy.util.cli_helpers import main_helper
+    from cbapi.legacy.util.composite_helpers import MessageSubscriberAndLiveResponseActor
+    import cbapi.legacy.util.sensor_events_pb2 as cpb
+except ImportError:
+    from cbapi.util.cli_helpers import main_helper
+    from cbapi.util.composite_helpers import MessageSubscriberAndLiveResponseActor
+    import cbapi.util.sensor_events_pb2 as cpb
 
 class RegistryModWatcherAndValueGrabber(MessageSubscriberAndLiveResponseActor):
     """

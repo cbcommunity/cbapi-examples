@@ -31,7 +31,10 @@
 #
 
 
-from cbapi.util.cli_helpers import main_helper
+try:
+    from cbapi.legacy.util.cli_helpers import main_helper
+except ImportError:
+    from cbapi.util.cli_helpers import main_helper
 
 def main(cb, args):
     for (proc, events) in cb.process_search_and_events_iter(r"process_name:cmd.exe (filemod:*.exe or filemod:*.dll)"):
