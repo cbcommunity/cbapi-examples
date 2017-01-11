@@ -44,50 +44,52 @@
 # ------------------------------------------------------------------------------
 
 import sys
-import optparse
-import cbapi
-import ConfigParser
-import os
+from cbapi.response import *
+from cbapi.example_helpers import get_cb_response_object, build_cli_parser
+from six.moves.configparser import ConfigParser
+from six import PY3
 from openpyxl import Workbook
-from openpyxl.cell import get_column_letter, column_index_from_string
+import traceback
 
-def build_cli_parser():
-    parser = optparse.OptionParser(usage="%prog [options]", description="Perform a binary search")
 
-    # for each supported output type, add an option
+def convert_to_string(input):
+    if not PY3:
+        return unicode(input)
+    else:
+        return str(input)
+
+
+def create_tab(section_name, myheader, wb):
+    # prune the tab name to 31 for excel
     #
-    parser.add_option("-a", "--apitoken", action="store", default=None, dest="token",
-                      help="API Token for Carbon Black server")
-    parser.add_option("-b", "--blank-tabs", action="store_false", default=True, dest="blanktabs",
-                      help="Display blank tabs in Excel if the query returns no results.")
-    parser.add_option("-c", "--cburl", action="store", default=None, dest="url",
-                      help="CB server's URL.  e.g., http://127.0.0.1 ")
-    parser.add_option("-f", "--configfile", action="store", default=None, dest="configfile",
-                      help="This is the configuratiom file")
-    parser.add_option("-n", "--no-ssl-verify", action="store_false", default=True, dest="ssl_verify",
-                      help="Do not verify server SSL certificate.")
-    parser.add_option("-o", "--outfile", action="store", default=None, dest="outfile",
-                      help="This is the name of the spreadsheet that we'll create")
-    parser.add_option("-p", "--process-link", action="store_false", default=True, dest="processlink",
-                      help="Display blank tabs in Excel if the query returns no results.")
-    parser.add_option("-s", "--page-size", action="store", default=None, dest="page_size",
-                      help="This allows you to change the default pagination (3000) to grab more data.")
-    parser.add_option("-v", "--verbose", action="store_false", default=True, dest="verbose",
-                      help="Print the progession through the queries.")
-    return parser
+    tabname = section_name[:31]
+    # create a unique tab name
+    #
+    wb.create_sheet(title=tabname)
+    # grab the active worksheet
+    #
+    ws = wb.get_sheet_by_name(tabname)
+    # print the header for each sheet
+    #
+    for col, this in enumerate(myheader):
+        ws.cell(row=1, column=col + 1).value = this
+
+    return ws
+
 
 def main(argv):
-    parser = build_cli_parser()
-    opts, args = parser.parse_args(argv)
-    if not opts.url or not opts.token or opts.configfile is None or opts.outfile is None:
-        print "Missing required param; run with --help for usage"
-        sys.exit(-1)
+    parser = build_cli_parser(description="Create an Excel report")
+    parser.add_argument("-b", "--blank-tabs", action="store_true", default=True, dest="blanktabs",
+                      help="Display blank tabs in Excel if the query returns no results.")
+    parser.add_argument("-f", "--configfile", action="store", dest="configfile",
+                      help="This is the configuration file", required=True)
+    parser.add_argument("-o", "--outfile", action="store", default=None, dest="outfile",
+                      help="This is the name of the spreadsheet that we'll create", required=True)
 
-    # build a cbapi object
-    #
-    cb = cbapi.CbApi(opts.url, token=opts.token, ssl_verify=opts.ssl_verify)
+    args = parser.parse_args()
+    cb = get_cb_response_object(args)
 
-    config = ConfigParser.ConfigParser()
+    config = ConfigParser()
 
     # build the Excel workbook
     #
@@ -95,116 +97,60 @@ def main(argv):
 
     # read the config file in
     #
-    config.readfp(open(opts.configfile))
+    config.readfp(open(args.configfile))
 
     # loop through the config file to pull each query
     #
-    for each_section in config.sections():
+    for section_name in config.sections():
+        section_type = config.get(section_name, "type")
+        if section_type == 'binary':
+            query_cls = Binary
+        elif section_type == 'process':
+            query_cls = Process
+        elif section_type == 'alert':
+            query_cls = Alert
+        else:
+            print("Invalid query type {}, skipping.".format(section_type))
+            continue
 
-        if config.get(each_section, "type") == 'binary':
-            try:
-                seedquery = cb.binary_search(config.get(each_section, "query"),0,1)
-                total_results = seedquery['total_results']
-                if total_results == 0 and opts.blanktabs:
-                    continue
-            except:
-                e = sys.exc_info()[0]
-                print e
-                continue
-        elif config.get(each_section, "type") == 'process':
-            try:
-                seedquery = cb.process_search(config.get(each_section, "query"),0,1)
-                total_results = seedquery['total_results']
-                if total_results == 0 and opts.blanktabs:
-                    continue
-            except:
-                e = sys.exc_info()[0]
-                print e
-                continue
-        elif config.get(each_section, "type") == 'alert':
-            try:
-                seedquery = cb.alert_search(config.get(each_section, "query"),0,1)
-                total_results = seedquery['total_results']
-                if total_results == 0 and opts.blanktabs:
-                    continue
-            except:
-                e = sys.exc_info()[0]
-                print e
-                continue
         # print the current query if in verbose mode
         #
-        if not opts.verbose:
-            print 'Working on query:',config.get(each_section, "query")
+        query = config.get(section_name, "query")
+        if args.verbose:
+            print('Working on query: {}'.format(query))
 
-        # prune the tab name to 31 for excel
-        #
-        tabname = each_section[:31]
+        created_tab = False
+        myheader = config.get(section_name, "fields").split(",")
+        myheader.insert(0,"Link")
 
-        # create a unique tab name
-        #
-        wb.create_sheet(tabname)
+        if args.blanktabs:
+            ws = create_tab(section_name, myheader, wb)
 
-        # grab the active worksheet
-        #
-        ws = wb.get_sheet_by_name(tabname)
+        try:
+            for row, result in enumerate(cb.select(query_cls).where(query)):
+                if not args.blanktabs and not created_tab:
+                    ws = create_tab(section_name, myheader, wb)
+                    created_tab = True
 
-        # Query for the data
-        #
-        myheader = config.get(each_section, "fields").split(",")
-
-        if not opts.processlink:
-            myheader.insert(0,"Link")
-
-        # print the header for each sheet
-        #
-        col = 0
-        for this in myheader:
-            col += 1
-            ws.cell(row=1, column=col).value = this
-        row = 1
-        start = 0
-        if opts.page_size:
-            pagesize = int(opts.page_size)
-        else:
-            pagesize = 3000
-        while True:
-            # for each result 
-            if config.get(each_section, "type") == 'binary':
-                searchquery = cb.binary_search(config.get(each_section, "query"),start,start + pagesize)
-            elif config.get(each_section, "type") == 'process':
-                searchquery = cb.process_search(config.get(each_section, "query"),start,start + pagesize)
-            elif config.get(each_section, "type") == 'alert':
-                searchquery = cb.alert_search(config.get(each_section, "query"),start,start + pagesize)
-            if len(searchquery['results']) == 0: break
-            for tags in searchquery['results']:
-                row += 1
-                col = 0
-                for item in myheader:
-                    col += 1
-                    if item == "Link":
-                        proclink = opts.url
-                        if config.get(each_section, "Type") == "process":
-                            proclink += '/#analyze/'
-                            proclink += unicode(tags.get("unique_id")[:36])
-                            proclink += '/'
-                            proclink += unicode(tags.get("segment_id"))
-                        elif config.get(each_section, "Type") == "alert":
-                            proclink += '/#analyze/'
-                            proclink += unicode(tags.get("process_id"))
-                            proclink += '/'
-                            proclink += unicode(tags.get("segment_id"))
-                        elif config.get(each_section, "Type") == "binary":
-                            proclink += '/#/binary/'
-                            proclink += unicode(tags.get("md5"))
-                        ws.cell(row=row, column=col).hyperlink = proclink
+                for col, header_title in enumerate(myheader):
+                    if header_title == "Link":
+                        if section_type == "alert":
+                            link = result.proc.webui_link
+                        else:
+                            link = result.webui_link
+                        ws.cell(row=row+2, column=col+1).hyperlink = link
                     else:
-                        ws.cell(row=row, column=col).value = unicode(tags.get(item, '<UNKNOWN>'))
-            start = start + int(pagesize)
+                        ws.cell(row=row+2, column=col+1).value = convert_to_string(result.get(header_title, "<UNKNOWN>"))
+        except Exception as e:
+            print("Encountered exception while processing query from section {0}: {1}".format(section_name, e))
+            traceback.print_exc()
+            print("Continuing...")
 
-    # save the wookbook
+    # save the workbook
     #
     wb.remove_sheet(wb.get_sheet_by_name('Sheet'))
-    wb.save(opts.outfile)    
+    wb.save(args.outfile)
+
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))
