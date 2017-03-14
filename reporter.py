@@ -51,6 +51,9 @@ from six import PY3
 from openpyxl import Workbook
 import traceback
 
+int2ip = lambda n: '.'.join([str(n >> (i << 3) & 0xFF) for i in range(0, 4)[::-1]])
+
+ip_fields = ['comms_ip','interface_ip']
 
 def convert_to_string(input):
     if not PY3:
@@ -79,13 +82,14 @@ def create_tab(section_name, myheader, wb):
 
 def main(argv):
     parser = build_cli_parser(description="Create an Excel report")
-    parser.add_argument("-b", "--blank-tabs", action="store_true", default=True, dest="blanktabs",
+    parser.add_argument("-b", "--blank-tabs", action="store_true", default=False, dest="blanktabs",
                       help="Display blank tabs in Excel if the query returns no results.")
     parser.add_argument("-f", "--configfile", action="store", dest="configfile",
                       help="This is the configuration file", required=True)
     parser.add_argument("-o", "--outfile", action="store", default=None, dest="outfile",
                       help="This is the name of the spreadsheet that we'll create", required=True)
-
+    parser.add_argument("-q", "--print-query", action="store_true", default=False, dest="printquery",
+                      help="Print the query currently being worked.")
     args = parser.parse_args()
     cb = get_cb_response_object(args)
 
@@ -116,7 +120,7 @@ def main(argv):
         # print the current query if in verbose mode
         #
         query = config.get(section_name, "query")
-        if args.verbose:
+        if (args.verbose or args.printquery):
             print('Working on query: {}'.format(query))
 
         created_tab = False
@@ -140,7 +144,10 @@ def main(argv):
                             link = result.webui_link
                         ws.cell(row=row+2, column=col+1).hyperlink = link
                     else:
-                        ws.cell(row=row+2, column=col+1).value = convert_to_string(result.get(header_title, "<UNKNOWN>"))
+                        if (header_title in ip_fields and result.get(header_title)):
+                            ws.cell(row=row+2, column=col+1).value = int2ip(result.get(header_title, "<UNKNOWN>"))
+                        else:
+                            ws.cell(row=row+2, column=col+1).value = convert_to_string(result.get(header_title, "<UNKNOWN>"))
         except Exception as e:
             print("Encountered exception while processing query from section {0}: {1}".format(section_name, e))
             traceback.print_exc()
