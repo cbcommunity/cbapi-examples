@@ -145,7 +145,7 @@ def get_watchlist_id_by_name(watchlistsdict):
     for watchlist in parsed_json:
         for key, value in watchlistsdict.iteritems():
             if watchlist['name'].lower() == key.lower():
-                watchlistsdict[key] = watchlist['id']
+                watchlistsdict[key] = int(watchlist['id'])
 
 def Usage():
     return ("Usage: python auto_blacklist_from_watchlist.py <config file>")
